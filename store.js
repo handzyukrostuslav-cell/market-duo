@@ -1,6 +1,8 @@
 const MarkerStore = (function () {
   'use strict';
 
+  const DEFAULT_FIREBASE_URL = 'https://market-duo-default-rtdb.europe-west1.firebasedatabase.app';
+
   const STORAGE_KEYS = {
     INIT_FLAG: 'market_duo_initialized_v1',
     PRODUCTS: 'market_duo_products',
@@ -15,13 +17,11 @@ const MarkerStore = (function () {
   const SYSTEM_CATEGORIES = [BAGS_CATEGORY, ADULT_CATEGORY];
 
   let products = [];
-  let settings = {
-    firebaseUrl: 'https://market-duo-default-rtdb.europe-west1.firebasedatabase.app',
-    cardNumber: '',let categories = [];
+  let categories = [];
   let orders = [];
   let orderCounter = 0;
   let settings = {
-    firebaseUrl: '',
+    firebaseUrl: DEFAULT_FIREBASE_URL,
     cardNumber: '',
     cardRecipient: 'MARKET DUO',
     loyaltyThreshold: 3,
@@ -36,7 +36,7 @@ const MarkerStore = (function () {
   let syncState = {
     status: 'local', // 'connected' | 'error' | 'local'
     lastSync: null,
-    message: 'Локальний режим (Firebase не підключено)'
+    message: 'Підключення до Firebase...'
   };
 
   function emitUpdated() {
@@ -152,7 +152,11 @@ const MarkerStore = (function () {
     try {
       const savedSettings = JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || 'null');
       if (savedSettings && typeof savedSettings === 'object') {
-        settings = { ...settings, ...savedSettings };
+        settings = {
+          ...settings,
+          ...savedSettings,
+          firebaseUrl: (savedSettings.firebaseUrl || '').trim() || DEFAULT_FIREBASE_URL
+        };
       }
 
       const savedProducts = JSON.parse(localStorage.getItem(STORAGE_KEYS.PRODUCTS) || 'null');
@@ -283,7 +287,7 @@ const MarkerStore = (function () {
 
   // --- Хмарна синхронізація Firebase REST API ---
   function getCleanFirebaseUrl() {
-    return String(settings.firebaseUrl || '').trim().replace(/\/+$/, '');
+    return String(settings.firebaseUrl || DEFAULT_FIREBASE_URL).trim().replace(/\/+$/, '');
   }
 
   async function syncNodeToCloud(nodeName, payload) {
@@ -297,7 +301,11 @@ const MarkerStore = (function () {
         body: JSON.stringify(payload)
       });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const timeStr = new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const timeStr = new Date().toLocaleTimeString('uk-UA', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
       setSyncState('connected', `Синхронізовано (${timeStr})`);
       return true;
     } catch (e) {
@@ -342,7 +350,11 @@ const MarkerStore = (function () {
           lastOrdersMap.set(order.id, serialized);
         })
       );
-      const timeStr = new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const timeStr = new Date().toLocaleTimeString('uk-UA', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
       setSyncState('connected', `Синхронізовано (${timeStr})`);
     } catch (e) {
       setSyncState('error', 'Помилка збереження замовлення у Firebase');
@@ -373,7 +385,7 @@ const MarkerStore = (function () {
           settings = {
             ...settings,
             ...data.settings,
-            firebaseUrl: baseUrl
+            firebaseUrl: (data.settings.firebaseUrl || '').trim() || baseUrl
           };
         }
         if (typeof data.order_counter === 'number') {
@@ -397,7 +409,11 @@ const MarkerStore = (function () {
         saveLocalAll();
       }
 
-      const timeStr = new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+      const timeStr = new Date().toLocaleTimeString('uk-UA', {
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit'
+      });
       setSyncState('connected', `Онлайн (${timeStr})`);
       return true;
     } catch (e) {
@@ -432,6 +448,9 @@ const MarkerStore = (function () {
 
   function updateSettings(patch) {
     settings = { ...settings, ...patch };
+    if (!settings.firebaseUrl) {
+      settings.firebaseUrl = DEFAULT_FIREBASE_URL;
+    }
     localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
     syncNodeToCloud('settings', settings);
   }
@@ -681,7 +700,10 @@ const MarkerStore = (function () {
       }
     });
 
-    const timeStr = new Date().toLocaleTimeString('uk-UA', { hour: '2-digit', minute: '2-digit' });
+    const timeStr = new Date().toLocaleTimeString('uk-UA', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
     const noteChunk = `[${timeStr}] + ${addedDescriptions.join(', ')}`;
     order.addedNote = order.addedNote ? `${order.addedNote}; ${noteChunk}` : noteChunk;
 
