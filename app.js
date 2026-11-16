@@ -13,25 +13,43 @@
   let cart = []; // [{ productId, qty }]
   let modalBagQuantities = {}; // { bagProductId: qty }
   let cabinetSyncTimer = null;
+  let memoryAgeVerified = false;
+
+  const clientMemoryStore = new Map();
+  function readClientStorage(key) {
+    try {
+      return localStorage.getItem(key);
+    } catch (e) {
+      return clientMemoryStore.has(key) ? clientMemoryStore.get(key) : null;
+    }
+  }
+
+  function writeClientStorage(key, val) {
+    try {
+      localStorage.setItem(key, val);
+    } catch (e) {
+      clientMemoryStore.set(key, String(val));
+    }
+  }
 
   // --- Робота з localStorage клієнта ---
   function loadClientState() {
     try {
-      const savedFavs = JSON.parse(localStorage.getItem(FAVORITES_KEY) || '[]');
+      const savedFavs = JSON.parse(readClientStorage(FAVORITES_KEY) || '[]');
       if (Array.isArray(savedFavs)) favorites = new Set(savedFavs);
     } catch (e) {
       favorites = new Set();
     }
 
     try {
-      const savedCart = JSON.parse(localStorage.getItem(CART_KEY) || '[]');
+      const savedCart = JSON.parse(readClientStorage(CART_KEY) || '[]');
       if (Array.isArray(savedCart)) cart = savedCart;
     } catch (e) {
       cart = [];
     }
 
     try {
-      const profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}');
+      const profile = JSON.parse(readClientStorage(PROFILE_KEY) || '{}');
       if (profile.name) {
         const nameInput = document.getElementById('customerNameInput');
         if (nameInput) nameInput.value = profile.name;
@@ -48,17 +66,17 @@
   }
 
   function saveFavorites() {
-    localStorage.setItem(FAVORITES_KEY, JSON.stringify(Array.from(favorites)));
+    writeClientStorage(FAVORITES_KEY, JSON.stringify(Array.from(favorites)));
     updateHeaderBadges();
   }
 
   function saveCart() {
-    localStorage.setItem(CART_KEY, JSON.stringify(cart));
+    writeClientStorage(CART_KEY, JSON.stringify(cart));
     updateHeaderBadges();
   }
 
   function saveProfile(name, phone) {
-    localStorage.setItem(
+    writeClientStorage(
       PROFILE_KEY,
       JSON.stringify({
         name: String(name || '').trim(),
@@ -68,7 +86,21 @@
   }
 
   function isAgeVerified() {
-    return sessionStorage.getItem(AGE_VERIFIED_KEY) === 'true';
+    if (memoryAgeVerified) return true;
+    try {
+      return sessionStorage.getItem(AGE_VERIFIED_KEY) === 'true';
+    } catch (e) {
+      return memoryAgeVerified;
+    }
+  }
+
+  function setAgeVerified() {
+    memoryAgeVerified = true;
+    try {
+      sessionStorage.setItem(AGE_VERIFIED_KEY, 'true');
+    } catch (e) {
+      // ignore
+    }
   }
 
   // --- Оновлення лічильників у шапці ---
@@ -78,8 +110,7 @@
 
     const cartBadge = document.getElementById('cartCountBadge');
     if (cartBadge) {
-      const totalPositions = cart.length;
-      cartBadge.textContent = String(totalPositions);
+      cartBadge.textContent = String(cart.length);
     }
 
     // Червоний значок ! на "Мій кабінет", якщо є замовлення зі статусом "Очікує підтвердження клієнта"
@@ -90,7 +121,7 @@
       let needsApproval = false;
       if (norm) {
         needsApproval = MarkerStore.getOrders().some(
-          (o) => o.phoneNormalized === norm && o.status === 'Очікує підтвердження клієнта'
+          (o) => o && o.phoneNormalized === norm && o.status === 'Очікує підтвердження клієнта'
         );
       }
       alertBadge.classList.toggle('hidden', !needsApproval);
@@ -103,7 +134,7 @@
     if (cabInput && cabInput.value.trim()) return cabInput.value.trim();
     if (cartInput && cartInput.value.trim()) return cartInput.value.trim();
     try {
-      const profile = JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}');
+      const profile = JSON.parse(readClientStorage(PROFILE_KEY) || '{}');
       return profile.phone || '';
     } catch (e) {
       return '';
@@ -177,12 +208,12 @@
     ];
 
     categories.forEach((cat) => {
-      // Розділ 18+ прихований із загального списку
+      if (!cat || !cat.name) return;
       if (cat.name === MarkerStore.ADULT_CATEGORY) return;
       if (cat.visible === false) return;
 
       if (autoHideEmpty) {
-        const hasProducts = products.some((p) => p.category === cat.name);
+        const hasProducts = products.some((p) => p && p.category === cat.name);
         if (!hasProducts) return;
       }
 
@@ -205,7 +236,7 @@
     const countEl = document.getElementById('catalogItemsCount');
     if (!grid) return;
 
-    const allProducts = MarkerStore.getProducts();
+    const allProducts = MarkerStore.getProducts().filter((p) => p && typeof p === 'object');
     let filtered = [];
 
     if (currentMainTab === 'adult') {
@@ -220,7 +251,6 @@
       });
     } else if (selectedCategory === 'all') {
       titleEl.textContent = 'Усі товари';
-      // Товари 18+ приховані із загального списку та з "Усіх товарів"
       filtered = allProducts.filter((p) => p.category !== MarkerStore.ADULT_CATEGORY);
     } else {
       titleEl.textContent = selectedCategory;
@@ -400,7 +430,6 @@
     const products = MarkerStore.getProducts();
     const esc = MarkerStore.escapeHtml;
 
-    // Видаляємо неіснуючі товари
     cart = cart.filter((entry) => products.some((p) => p.id === entry.productId));
 
     if (cart.length === 0) {
@@ -414,7 +443,6 @@
     emptyState.classList.add('hidden');
     checkoutForm.classList.remove('hidden');
 
-    // Рендеримо позиції кошика
     itemsList.innerHTML = cart.map((entry) => {
       const prod = products.find((p) => p.id === entry.productId);
       if (!prod) return '';
@@ -486,7 +514,6 @@
     const phone = document.getElementById('customerPhoneInput').value;
     const summary = calculateCartSummary(cart);
 
-    // Підсумки
     document.getElementById('cartSubtotal').textContent = `${MarkerStore.formatMoney(summary.subtotal)} грн`;
     const discountRow = document.getElementById('cartDiscountRow');
     if (summary.discountPercent > 0) {
@@ -565,7 +592,6 @@
       `;
     }).join('');
 
-    // Рахуємо підсумкову суму в реальному часі з урахуванням обраних у модалці пакетів
     const nonBagCart = cart.filter((entry) => {
       const prod = products.find((p) => p.id === entry.productId);
       return prod && !prod.isBag && prod.category !== MarkerStore.BAGS_CATEGORY;
@@ -605,7 +631,6 @@
   function finalizeNewOrder(ownBag) {
     const products = MarkerStore.getProducts();
 
-    // Оновлюємо пакети у кошику відповідно до вибору
     cart = cart.filter((entry) => {
       const prod = products.find((p) => p.id === entry.productId);
       return prod && !prod.isBag && prod.category !== MarkerStore.BAGS_CATEGORY;
@@ -637,7 +662,6 @@
       items
     });
 
-    // Очищуємо кошик та закриваємо модалки
     cart = [];
     saveCart();
     document.getElementById('customerCommentInput').value = '';
@@ -645,7 +669,6 @@
     closeCartDrawer();
     renderProductsGrid();
 
-    // Показуємо вікно успішного оформлення
     document.getElementById('successOrderCode').textContent = order.code;
     const payNote = document.getElementById('successPaymentNote');
     if (paymentMethod === 'card') {
@@ -721,7 +744,6 @@
       return;
     }
 
-    // Банер програми лояльності
     const loyalty = MarkerStore.getCustomerLoyalty(phone);
     loyaltyBanner.classList.remove('hidden');
     if (loyalty.isLoyal) {
@@ -740,8 +762,7 @@
       `;
     }
 
-    // Замовлення клієнта
-    const clientOrders = MarkerStore.getOrders().filter((o) => o.phoneNormalized === norm);
+    const clientOrders = MarkerStore.getOrders().filter((o) => o && o.phoneNormalized === norm);
 
     if (clientOrders.length === 0) {
       ordersListEl.innerHTML = `
@@ -861,7 +882,6 @@
 
   // --- Прив'язка всіх подій вітрини ---
   function bindEvents() {
-    // Навігація в шапці
     document.querySelectorAll('.nav-tab').forEach((btn) => {
       btn.addEventListener('click', () => switchMainTab(btn.dataset.tab));
     });
@@ -872,7 +892,6 @@
       switchMainTab('catalog');
     });
 
-    // Пошук
     const searchInput = document.getElementById('searchInput');
     const clearSearchBtn = document.getElementById('clearSearchBtn');
     searchInput.addEventListener('input', () => {
@@ -888,7 +907,6 @@
       renderProductsGrid();
     });
 
-    // Чіпси категорій
     document.getElementById('categoryChips').addEventListener('click', (e) => {
       const chip = e.target.closest('[data-cat]');
       if (!chip) return;
@@ -897,7 +915,6 @@
       renderProductsGrid();
     });
 
-    // Дії на картках товарів
     document.getElementById('productsGrid').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-action]');
       if (!btn) return;
@@ -919,12 +936,10 @@
       }
     });
 
-    // Кошик: відкриття / закриття
     document.getElementById('openCartBtn').addEventListener('click', openCartDrawer);
     document.getElementById('closeCartBtn').addEventListener('click', closeCartDrawer);
     document.getElementById('cartBackdrop').addEventListener('click', closeCartDrawer);
 
-    // Дії всередині кошика
     document.getElementById('cartDrawerBody').addEventListener('click', (e) => {
       const btn = e.target.closest('[data-cart-action]');
       if (!btn) return;
@@ -936,7 +951,6 @@
       else if (action === 'dec') changeCartQty(id, -1);
     });
 
-    // Введення телефону та імені в кошику
     document.getElementById('customerPhoneInput').addEventListener('input', () => {
       updateCartCheckoutState();
     });
@@ -948,10 +962,8 @@
       );
     });
 
-    // Дозамовлення в активний пакет
     document.getElementById('appendToActiveOrderBtn').addEventListener('click', handleAppendToActiveOrder);
 
-    // Перемикання способу оплати
     document.querySelectorAll('input[name="paymentMethod"]').forEach((radio) => {
       radio.addEventListener('change', (e) => {
         const isCard = e.target.value === 'card';
@@ -960,7 +972,6 @@
       });
     });
 
-    // Копіювання реквізитів та коду
     document.getElementById('copyCardBtn').addEventListener('click', () => {
       const num = document.getElementById('displayCardNumber').textContent;
       navigator.clipboard?.writeText(num);
@@ -977,16 +988,14 @@
       setTimeout(() => (btn.textContent = 'Копіювати'), 1800);
     });
 
-    // Оформлення нового замовлення -> відкриття вибору пакета
     document.getElementById('checkoutForm').addEventListener('submit', (e) => {
       e.preventDefault();
       if (cart.length === 0) return;
       openBagSelectionModal();
     });
 
-    // Модальне вікно 18+
     document.getElementById('confirmAgeBtn').addEventListener('click', () => {
-      sessionStorage.setItem(AGE_VERIFIED_KEY, 'true');
+      setAgeVerified();
       document.getElementById('ageModal').classList.add('hidden');
       switchMainTab('adult');
     });
@@ -995,7 +1004,6 @@
       document.getElementById('ageModal').classList.add('hidden');
     });
 
-    // Модальне вікно вибору пакета
     document.getElementById('closeBagModalBtn').addEventListener('click', () => {
       document.getElementById('bagModal').classList.add('hidden');
     });
@@ -1023,7 +1031,6 @@
       finalizeNewOrder(true);
     });
 
-    // Модальне вікно успішного замовлення
     document.getElementById('closeSuccessModalBtn').addEventListener('click', () => {
       document.getElementById('orderSuccessModal').classList.add('hidden');
     });
@@ -1033,13 +1040,17 @@
       switchMainTab('cabinet');
     });
 
-    // Кабінет клієнта
     document.getElementById('cabinetSearchForm').addEventListener('submit', (e) => {
       e.preventDefault();
       const phone = document.getElementById('cabinetPhoneInput').value.trim();
       if (phone) {
-        const existingProfile = JSON.parse(localStorage.getItem(PROFILE_KEY) || '{}');
-        saveProfile(existingProfile.name || '', phone);
+        let existingName = '';
+        try {
+          existingName = JSON.parse(readClientStorage(PROFILE_KEY) || '{}').name || '';
+        } catch (err) {
+          existingName = '';
+        }
+        saveProfile(existingName, phone);
         const cartPhone = document.getElementById('customerPhoneInput');
         if (cartPhone && !cartPhone.value.trim()) cartPhone.value = phone;
       }
