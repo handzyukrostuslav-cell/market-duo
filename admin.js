@@ -9,6 +9,8 @@
   let pendingBagImageBase64 = '';
   let currentMissingContext = null; // { orderId, itemIndex }
   let autoSyncTimer = null;
+  let dashboardInitialized = false;
+  let memoryAuthFlag = false;
 
   const ORDER_STATUSES = [
     'Розміщено',
@@ -18,6 +20,29 @@
     'Виконано успішно',
     'Відхилено'
   ];
+
+  // --- Безпечна робота з сесією авторизації ---
+  function getAuthSession() {
+    if (memoryAuthFlag) return true;
+    try {
+      return sessionStorage.getItem(AUTH_SESSION_KEY) === 'true';
+    } catch (e) {
+      return memoryAuthFlag;
+    }
+  }
+
+  function setAuthSession(isAuth) {
+    memoryAuthFlag = Boolean(isAuth);
+    try {
+      if (isAuth) {
+        sessionStorage.setItem(AUTH_SESSION_KEY, 'true');
+      } else {
+        sessionStorage.removeItem(AUTH_SESSION_KEY);
+      }
+    } catch (e) {
+      // Резерв через memoryAuthFlag для мобільних WebView
+    }
+  }
 
   // --- Утиліти сповіщень та звуку ---
   function playNewOrderChime() {
@@ -30,7 +55,7 @@
       const osc1 = ctx.createOscillator();
       const gain1 = ctx.createGain();
       osc1.type = 'sine';
-      osc1.frequency.setValueAtTime(587.33, now); // D5
+      osc1.frequency.setValueAtTime(587.33, now);
       gain1.gain.setValueAtTime(0.18, now);
       gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
       osc1.connect(gain1);
@@ -41,7 +66,7 @@
       const osc2 = ctx.createOscillator();
       const gain2 = ctx.createGain();
       osc2.type = 'sine';
-      osc2.frequency.setValueAtTime(880, now + 0.18); // A5
+      osc2.frequency.setValueAtTime(880, now + 0.18);
       gain2.gain.setValueAtTime(0.22, now + 0.18);
       gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.55);
       osc2.connect(gain2);
@@ -76,7 +101,7 @@
   }
 
   function isAuthenticated() {
-    return sessionStorage.getItem(AUTH_SESSION_KEY) === 'true';
+    return getAuthSession();
   }
 
   function initAuth() {
@@ -84,8 +109,18 @@
     const dashboard = document.getElementById('adminDashboard');
     const loginForm = document.getElementById('adminLoginForm');
     const passwordInput = document.getElementById('adminPasswordInput');
+    const togglePassBtn = document.getElementById('toggleAdminPassBtn');
     const loginError = document.getElementById('adminLoginError');
+    const loginBtn = document.getElementById('adminLoginBtn');
     const logoutBtn = document.getElementById('adminLogoutBtn');
+
+    if (togglePassBtn && passwordInput) {
+      togglePassBtn.addEventListener('click', () => {
+        const isPassword = passwordInput.type === 'password';
+        passwordInput.type = isPassword ? 'text' : 'password';
+        togglePassBtn.textContent = isPassword ? '🙈' : '👁️';
+      });
+    }
 
     if (isAuthenticated()) {
       loginScreen.classList.add('hidden');
@@ -94,28 +129,71 @@
     } else {
       loginScreen.classList.remove('hidden');
       dashboard.classList.add('hidden');
+      // Підтягуємо актуальні налаштування (у т.ч. пароль) з Firebase у фоні
+      MarkerStore.syncFromCloud().catch(() => {});
     }
 
-    loginForm.addEventListener('submit', (e) => {
-      e.preventDefault();
-      const entered = passwordInput.value.trim();
+    let isSubmittingLogin = false;
+
+    async function handleLoginAttempt(e) {
+      if (e) e.preventDefault();
+      if (isSubmittingLogin) return;
+
+      const entered = String(passwordInput.value || '').trim();
+      if (!entered) {
+        loginError.textContent = 'Введіть пароль адміністратора.';
+        loginError.classList.remove('hidden');
+        passwordInput.focus();
+        return;
+      }
+
+      isSubmittingLogin = true;
+      loginError.classList.add('hidden');
+      const originalBtnText = loginBtn ? loginBtn.textContent : 'Увійти в панель';
+      if (loginBtn) {
+        loginBtn.disabled = true;
+        loginBtn.textContent = 'Перевірка...';
+      }
+
+      try {
+        // Синхронізуємо налаштування з хмари, щоб актуальний пароль діяв і на телефоні
+        await MarkerStore.syncFromCloud();
+      } catch (err) {
+        // Якщо хмара тимчасово недоступна — перевіряємо за локальним паролем
+      }
+
       const settings = MarkerStore.getSettings();
-      const validPass = settings.adminPassword || '1111';
+      const validPass = String(settings.adminPassword || '1111').trim();
 
       if (entered === validPass) {
-        sessionStorage.setItem(AUTH_SESSION_KEY, 'true');
-        loginError.classList.add('hidden');
+        setAuthSession(true);
         passwordInput.value = '';
         loginScreen.classList.add('hidden');
         dashboard.classList.remove('hidden');
         startDashboard();
       } else {
+        loginError.textContent = 'Невірний пароль. Спробуйте ще раз.';
         loginError.classList.remove('hidden');
       }
-    });
+
+      if (loginBtn) {
+        loginBtn.disabled = false;
+        loginBtn.textContent = originalBtnText;
+      }
+      isSubmittingLogin = false;
+    }
+
+    loginForm.addEventListener('submit', handleLoginAttempt);
+    if (loginBtn) {
+      loginBtn.addEventListener('click', (e) => {
+        if (loginForm.checkValidity()) {
+          handleLoginAttempt(e);
+        }
+      });
+    }
 
     logoutBtn.addEventListener('click', () => {
-      sessionStorage.removeItem(AUTH_SESSION_KEY);
+      setAuthSession(false);
       if (autoSyncTimer) clearInterval(autoSyncTimer);
       dashboard.classList.add('hidden');
       loginScreen.classList.remove('hidden');
@@ -1195,6 +1273,9 @@
 
   // --- Ініціалізація обробників подій ---
   function bindDashboardEvents() {
+    if (dashboardInitialized) return;
+    dashboardInitialized = true;
+
     // Вкладки
     document.querySelectorAll('.admin-tab').forEach((btn) => {
       btn.addEventListener('click', () => switchAdminTab(btn.dataset.adminTab));
@@ -1432,6 +1513,8 @@
 
   async function startDashboard() {
     bindDashboardEvents();
+    renderCurrentTab();
+
     await MarkerStore.syncFromCloud();
     checkForNewOrders(MarkerStore.getOrders());
     renderCurrentTab();
