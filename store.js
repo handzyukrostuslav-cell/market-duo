@@ -16,6 +16,25 @@ const MarkerStore = (function () {
   const ADULT_CATEGORY = 'Алкоголь та тютюнові вироби';
   const SYSTEM_CATEGORIES = [BAGS_CATEGORY, ADULT_CATEGORY];
 
+  // Безпечне сховище з резервом у пам'яті для мобільних WebView / приватного режиму
+  const memoryFallback = new Map();
+  const safeStorage = {
+    getItem(key) {
+      try {
+        return localStorage.getItem(key);
+      } catch (e) {
+        return memoryFallback.has(key) ? memoryFallback.get(key) : null;
+      }
+    },
+    setItem(key, value) {
+      try {
+        localStorage.setItem(key, value);
+      } catch (e) {
+        memoryFallback.set(key, String(value));
+      }
+    }
+  };
+
   let products = [];
   let categories = [];
   let orders = [];
@@ -40,11 +59,15 @@ const MarkerStore = (function () {
   };
 
   function emitUpdated() {
-    window.dispatchEvent(
-      new CustomEvent('markerstore:updated', {
-        detail: { ...syncState }
-      })
-    );
+    try {
+      window.dispatchEvent(
+        new CustomEvent('markerstore:updated', {
+          detail: { ...syncState }
+        })
+      );
+    } catch (e) {
+      // ignore
+    }
   }
 
   function setSyncState(status, message) {
@@ -135,151 +158,180 @@ const MarkerStore = (function () {
     });
   }
 
+  function normalizeCloudCollection(raw) {
+    if (Array.isArray(raw)) {
+      return raw.filter((item) => item && typeof item === 'object');
+    }
+    if (raw && typeof raw === 'object') {
+      return Object.values(raw).filter((item) => item && typeof item === 'object');
+    }
+    return null;
+  }
+
+  async function fetchWithTimeout(url, options = {}, timeoutMs = 4500) {
+    if (typeof AbortController === 'undefined') {
+      return fetch(url, options);
+    }
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+    try {
+      return await fetch(url, { ...options, signal: controller.signal });
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
   // --- Локальне збереження ---
   function saveLocalAll() {
-    try {
-      localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
-      localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
-      localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
-      localStorage.setItem(STORAGE_KEYS.ORDER_COUNTER, String(orderCounter));
-      localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
-    } catch (e) {
-      console.error('Помилка збереження у localStorage:', e);
-    }
+    safeStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+    safeStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
+    safeStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+    safeStorage.setItem(STORAGE_KEYS.ORDER_COUNTER, String(orderCounter));
+    safeStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
   }
 
   function loadLocalAll() {
     try {
-      const savedSettings = JSON.parse(localStorage.getItem(STORAGE_KEYS.SETTINGS) || 'null');
+      const savedSettings = JSON.parse(safeStorage.getItem(STORAGE_KEYS.SETTINGS) || 'null');
       if (savedSettings && typeof savedSettings === 'object') {
         settings = {
           ...settings,
           ...savedSettings,
-          firebaseUrl: (savedSettings.firebaseUrl || '').trim() || DEFAULT_FIREBASE_URL
+          firebaseUrl: String(savedSettings.firebaseUrl || '').trim() || DEFAULT_FIREBASE_URL,
+          adminPassword: String(savedSettings.adminPassword || '1111').trim() || '1111'
         };
       }
 
-      const savedProducts = JSON.parse(localStorage.getItem(STORAGE_KEYS.PRODUCTS) || 'null');
-      if (Array.isArray(savedProducts)) products = savedProducts;
+      const savedProducts = JSON.parse(safeStorage.getItem(STORAGE_KEYS.PRODUCTS) || 'null');
+      const parsedProducts = normalizeCloudCollection(savedProducts);
+      if (parsedProducts) products = parsedProducts;
 
-      const savedCategories = JSON.parse(localStorage.getItem(STORAGE_KEYS.CATEGORIES) || 'null');
-      if (Array.isArray(savedCategories)) categories = savedCategories;
+      const savedCategories = JSON.parse(safeStorage.getItem(STORAGE_KEYS.CATEGORIES) || 'null');
+      const parsedCategories = normalizeCloudCollection(savedCategories);
+      if (parsedCategories) categories = parsedCategories;
 
-      const savedOrders = JSON.parse(localStorage.getItem(STORAGE_KEYS.ORDERS) || 'null');
-      if (Array.isArray(savedOrders)) {
-        orders = savedOrders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+      const savedOrders = JSON.parse(safeStorage.getItem(STORAGE_KEYS.ORDERS) || 'null');
+      const parsedOrders = normalizeCloudCollection(savedOrders);
+      if (parsedOrders) {
+        orders = parsedOrders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
       }
 
-      const savedCounter = parseInt(localStorage.getItem(STORAGE_KEYS.ORDER_COUNTER) || '0', 10);
+      const savedCounter = parseInt(safeStorage.getItem(STORAGE_KEYS.ORDER_COUNTER) || '0', 10);
       if (!isNaN(savedCounter)) orderCounter = savedCounter;
     } catch (e) {
-      console.error('Помилка читання localStorage:', e);
+      console.error('Помилка читання локального сховища:', e);
     }
   }
 
   function seedDefaultsIfNeeded() {
-    if (localStorage.getItem(STORAGE_KEYS.INIT_FLAG)) {
+    if (safeStorage.getItem(STORAGE_KEYS.INIT_FLAG) && products.length > 0) {
       ensureSystemCategories();
       return;
     }
 
-    categories = [
-      { name: 'Кава та чай', visible: true },
-      { name: 'Випічка та солодощі', visible: true },
-      { name: 'Напої', visible: true },
-      { name: 'Бакалія', visible: true },
-      { name: BAGS_CATEGORY, visible: true },
-      { name: ADULT_CATEGORY, visible: true }
-    ];
+    if (categories.length === 0) {
+      categories = [
+        { name: 'Кава та чай', visible: true },
+        { name: 'Випічка та солодощі', visible: true },
+        { name: 'Напої', visible: true },
+        { name: 'Бакалія', visible: true },
+        { name: BAGS_CATEGORY, visible: true },
+        { name: ADULT_CATEGORY, visible: true }
+      ];
+    } else {
+      ensureSystemCategories();
+    }
 
-    products = [
-      {
-        id: 'prod_seed_1',
-        code: '1001',
-        name: 'Кава зернова MARKET DUO Espresso',
-        category: 'Кава та чай',
-        unit: '1 кг',
-        price: 480,
-        emoji: '☕',
-        capacity: '100% Арабіка',
-        image: '',
-        inStock: true,
-        isBag: false
-      },
-      {
-        id: 'prod_seed_2',
-        code: '1002',
-        name: 'Круасан вершковий свіжоспечений',
-        category: 'Випічка та солодощі',
-        unit: '1 шт',
-        price: 38,
-        emoji: '🥐',
-        capacity: '85 г',
-        image: '',
-        inStock: true,
-        isBag: false
-      },
-      {
-        id: 'prod_seed_3',
-        code: '1003',
-        name: 'Сік апельсиновий прямого віджиму',
-        category: 'Напої',
-        unit: '900 мл',
-        price: 74,
-        emoji: '🧃',
-        capacity: '',
-        image: '',
-        inStock: true,
-        isBag: false
-      },
-      {
-        id: 'bag_seed_1',
-        code: '9001',
-        name: 'Пакет майка фірмовий середній',
-        category: BAGS_CATEGORY,
-        unit: '1 шт',
-        price: 4,
-        emoji: '🛍️',
-        capacity: 'до 7 кг',
-        image: '',
-        inStock: true,
-        isBag: true
-      },
-      {
-        id: 'bag_seed_2',
-        code: '9002',
-        name: 'Пакет великий посилений MARKET DUO',
-        category: BAGS_CATEGORY,
-        unit: '1 шт',
-        price: 7,
-        emoji: '🛍️',
-        capacity: 'до 15 кг',
-        image: '',
-        inStock: true,
-        isBag: true
-      },
-      {
-        id: 'prod_seed_adult_1',
-        code: '8001',
-        name: 'Вино сухе червоне Каберне (18+)',
-        category: ADULT_CATEGORY,
-        unit: '750 мл',
-        price: 215,
-        emoji: '🍷',
-        capacity: '',
-        image: '',
-        inStock: true,
-        isBag: false
-      }
-    ];
+    if (products.length === 0) {
+      products = [
+        {
+          id: 'prod_seed_1',
+          code: '1001',
+          name: 'Кава зернова MARKET DUO Espresso',
+          category: 'Кава та чай',
+          unit: '1 кг',
+          price: 480,
+          emoji: '☕',
+          capacity: '100% Арабіка',
+          image: '',
+          inStock: true,
+          isBag: false
+        },
+        {
+          id: 'prod_seed_2',
+          code: '1002',
+          name: 'Круасан вершковий свіжоспечений',
+          category: 'Випічка та солодощі',
+          unit: '1 шт',
+          price: 38,
+          emoji: '🥐',
+          capacity: '85 г',
+          image: '',
+          inStock: true,
+          isBag: false
+        },
+        {
+          id: 'prod_seed_3',
+          code: '1003',
+          name: 'Сік апельсиновий прямого віджиму',
+          category: 'Напої',
+          unit: '900 мл',
+          price: 74,
+          emoji: '🧃',
+          capacity: '',
+          image: '',
+          inStock: true,
+          isBag: false
+        },
+        {
+          id: 'bag_seed_1',
+          code: '9001',
+          name: 'Пакет майка фірмовий середній',
+          category: BAGS_CATEGORY,
+          unit: '1 шт',
+          price: 4,
+          emoji: '🛍️',
+          capacity: 'до 7 кг',
+          image: '',
+          inStock: true,
+          isBag: true
+        },
+        {
+          id: 'bag_seed_2',
+          code: '9002',
+          name: 'Пакет великий посилений MARKET DUO',
+          category: BAGS_CATEGORY,
+          unit: '1 шт',
+          price: 7,
+          emoji: '🛍️',
+          capacity: 'до 15 кг',
+          image: '',
+          inStock: true,
+          isBag: true
+        },
+        {
+          id: 'prod_seed_adult_1',
+          code: '8001',
+          name: 'Вино сухе червоне Каберне (18+)',
+          category: ADULT_CATEGORY,
+          unit: '750 мл',
+          price: 215,
+          emoji: '🍷',
+          capacity: '',
+          image: '',
+          inStock: true,
+          isBag: false
+        }
+      ];
+    }
 
-    localStorage.setItem(STORAGE_KEYS.INIT_FLAG, 'true');
+    safeStorage.setItem(STORAGE_KEYS.INIT_FLAG, 'true');
     saveLocalAll();
   }
 
   function ensureSystemCategories() {
     SYSTEM_CATEGORIES.forEach((sysName) => {
-      if (!categories.some((c) => c.name === sysName)) {
+      if (!categories.some((c) => c && c.name === sysName)) {
         categories.push({ name: sysName, visible: true });
       }
     });
@@ -295,7 +347,7 @@ const MarkerStore = (function () {
     if (!baseUrl) return false;
 
     try {
-      const res = await fetch(`${baseUrl}/markerplus/${nodeName}.json`, {
+      const res = await fetchWithTimeout(`${baseUrl}/markerplus/${nodeName}.json`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
@@ -317,7 +369,7 @@ const MarkerStore = (function () {
   // Збереження замовлень: індивідуальний PUT лише для змінених замовлень
   async function saveOrders() {
     orders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
-    localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
+    safeStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(orders));
 
     const baseUrl = getCleanFirebaseUrl();
     if (!baseUrl) {
@@ -338,7 +390,7 @@ const MarkerStore = (function () {
     try {
       await Promise.all(
         changedOrders.map(async ({ order, serialized }) => {
-          const res = await fetch(
+          const res = await fetchWithTimeout(
             `${baseUrl}/markerplus/orders/${encodeURIComponent(order.id)}.json`,
             {
               method: 'PUT',
@@ -369,31 +421,37 @@ const MarkerStore = (function () {
     }
 
     try {
-      const res = await fetch(`${baseUrl}/markerplus.json`, { cache: 'no-store' });
+      const res = await fetchWithTimeout(`${baseUrl}/markerplus.json`, { cache: 'no-store' });
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
 
       if (data && typeof data === 'object') {
-        if (Array.isArray(data.products)) {
-          products = data.products;
+        const cloudProducts = normalizeCloudCollection(data.products);
+        if (cloudProducts) {
+          products = cloudProducts;
         }
-        if (Array.isArray(data.categories)) {
-          categories = data.categories;
+
+        const cloudCategories = normalizeCloudCollection(data.categories);
+        if (cloudCategories && cloudCategories.length > 0) {
+          categories = cloudCategories;
           ensureSystemCategories();
         }
+
         if (data.settings && typeof data.settings === 'object') {
           settings = {
             ...settings,
             ...data.settings,
-            firebaseUrl: (data.settings.firebaseUrl || '').trim() || baseUrl
+            firebaseUrl: String(data.settings.firebaseUrl || '').trim() || baseUrl,
+            adminPassword: String(data.settings.adminPassword || settings.adminPassword || '1111').trim()
           };
         }
+
         if (typeof data.order_counter === 'number') {
           orderCounter = Math.max(orderCounter, data.order_counter);
         }
 
-        if (data.orders && typeof data.orders === 'object') {
-          const cloudOrders = Object.values(data.orders).filter(Boolean);
+        const cloudOrders = normalizeCloudCollection(data.orders);
+        if (cloudOrders) {
           cloudOrders.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
           orders = cloudOrders;
 
@@ -451,27 +509,30 @@ const MarkerStore = (function () {
     if (!settings.firebaseUrl) {
       settings.firebaseUrl = DEFAULT_FIREBASE_URL;
     }
-    localStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
+    if (settings.adminPassword !== undefined) {
+      settings.adminPassword = String(settings.adminPassword).trim() || '1111';
+    }
+    safeStorage.setItem(STORAGE_KEYS.SETTINGS, JSON.stringify(settings));
     syncNodeToCloud('settings', settings);
   }
 
   // --- Категорії ---
   function getCategories() {
-    return categories.map((c) => ({ ...c }));
+    return categories.filter(Boolean).map((c) => ({ ...c }));
   }
 
   function addCategory(name) {
     const clean = String(name || '').trim();
     if (!clean) return;
-    if (!categories.some((c) => c.name.toLowerCase() === clean.toLowerCase())) {
+    if (!categories.some((c) => c && c.name.toLowerCase() === clean.toLowerCase())) {
       categories.push({ name: clean, visible: true });
-      localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
+      safeStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
       syncNodeToCloud('categories', categories);
     }
   }
 
   function moveCategory(name, direction) {
-    const idx = categories.findIndex((c) => c.name === name);
+    const idx = categories.findIndex((c) => c && c.name === name);
     if (idx === -1) return;
     const targetIdx = direction === 'up' ? idx - 1 : idx + 1;
     if (targetIdx < 0 || targetIdx >= categories.length) return;
@@ -480,15 +541,15 @@ const MarkerStore = (function () {
     categories[idx] = categories[targetIdx];
     categories[targetIdx] = temp;
 
-    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
+    safeStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
     syncNodeToCloud('categories', categories);
   }
 
   function toggleCategoryVisibility(name) {
-    const cat = categories.find((c) => c.name === name);
+    const cat = categories.find((c) => c && c.name === name);
     if (!cat) return;
     cat.visible = cat.visible === false ? true : false;
-    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
+    safeStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
     syncNodeToCloud('categories', categories);
   }
 
@@ -496,19 +557,19 @@ const MarkerStore = (function () {
     if (SYSTEM_CATEGORIES.includes(name)) {
       return { ok: false, error: 'Системну категорію не можна видалити.' };
     }
-    const hasProducts = products.some((p) => p.category === name);
+    const hasProducts = products.some((p) => p && p.category === name);
     if (hasProducts) {
       return { ok: false, error: 'Неможливо видалити категорію, у якій є товари.' };
     }
-    categories = categories.filter((c) => c.name !== name);
-    localStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
+    categories = categories.filter((c) => c && c.name !== name);
+    safeStorage.setItem(STORAGE_KEYS.CATEGORIES, JSON.stringify(categories));
     syncNodeToCloud('categories', categories);
     return { ok: true };
   }
 
   // --- Товари та пакети ---
   function getProducts() {
-    return products.map((p) => ({ ...p }));
+    return products.filter(Boolean).map((p) => ({ ...p }));
   }
 
   function addProduct(prodData) {
@@ -530,30 +591,30 @@ const MarkerStore = (function () {
     };
 
     products.unshift(newProd);
-    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+    safeStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
     syncNodeToCloud('products', products);
     return newProd;
   }
 
   function updateProduct(id, patch) {
-    const idx = products.findIndex((p) => p.id === id);
+    const idx = products.findIndex((p) => p && p.id === id);
     if (idx === -1) return;
     products[idx] = { ...products[idx], ...patch };
-    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+    safeStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
     syncNodeToCloud('products', products);
   }
 
   function deleteProduct(id) {
-    products = products.filter((p) => p.id !== id);
-    localStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
+    products = products.filter((p) => p && p.id !== id);
+    safeStorage.setItem(STORAGE_KEYS.PRODUCTS, JSON.stringify(products));
     syncNodeToCloud('products', products);
   }
 
   // --- Замовлення, коди, перерахунок сум та лояльність ---
   function getOrders() {
-    return orders.map((o) => ({
+    return orders.filter(Boolean).map((o) => ({
       ...o,
-      items: (o.items || []).map((it) => ({
+      items: (o.items || []).filter(Boolean).map((it) => ({
         ...it,
         replacement: it.replacement ? { ...it.replacement } : undefined
       }))
@@ -563,6 +624,7 @@ const MarkerStore = (function () {
   function getMaxExistingCodeNumber() {
     let maxCode = orderCounter || 0;
     orders.forEach((o) => {
+      if (!o) return;
       const parsed = parseInt(String(o.code || '0').replace(/\D/g, ''), 10);
       if (!isNaN(parsed) && parsed > maxCode) {
         maxCode = parsed;
@@ -579,7 +641,7 @@ const MarkerStore = (function () {
   function generateNextOrderCode() {
     const nextNum = getMaxExistingCodeNumber() + 1;
     orderCounter = nextNum;
-    localStorage.setItem(STORAGE_KEYS.ORDER_COUNTER, String(orderCounter));
+    safeStorage.setItem(STORAGE_KEYS.ORDER_COUNTER, String(orderCounter));
     syncNodeToCloud('order_counter', orderCounter);
     return String(nextNum).padStart(4, '0');
   }
@@ -589,7 +651,7 @@ const MarkerStore = (function () {
 
     let rawSubtotal = 0;
     order.items.forEach((item) => {
-      if (item.status === 'missing') return;
+      if (!item || item.status === 'missing') return;
       if (item.status === 'replaced' && item.replacement) {
         rawSubtotal += (Number(item.replacement.price) || 0) * (Number(item.replacement.qty) || 0);
       } else {
@@ -623,7 +685,7 @@ const MarkerStore = (function () {
     }
 
     const successfulCount = orders.filter(
-      (o) => o.phoneNormalized === norm && o.status !== 'Відхилено'
+      (o) => o && o.phoneNormalized === norm && o.status !== 'Відхилено'
     ).length;
 
     return {
@@ -641,6 +703,7 @@ const MarkerStore = (function () {
     return (
       orders.find(
         (o) =>
+          o &&
           o.phoneNormalized === norm &&
           (o.status === 'Розміщено' || o.status === 'Комплектується')
       ) || null
@@ -682,7 +745,7 @@ const MarkerStore = (function () {
   }
 
   function appendItemsToOrder(orderId, newItems) {
-    const order = orders.find((o) => o.id === orderId);
+    const order = orders.find((o) => o && o.id === orderId);
     if (!order) return null;
 
     const addedDescriptions = [];
@@ -690,7 +753,7 @@ const MarkerStore = (function () {
     (newItems || []).forEach((incoming) => {
       addedDescriptions.push(`${incoming.name} (${incoming.qty} ${incoming.unit})`);
       const existingActive = order.items.find(
-        (it) => it.productId === incoming.productId && it.status === 'active'
+        (it) => it && it.productId === incoming.productId && it.status === 'active'
       );
       if (existingActive) {
         existingActive.qty = Math.round((existingActive.qty + incoming.qty) * 1000) / 1000;
@@ -713,7 +776,7 @@ const MarkerStore = (function () {
   }
 
   function updateOrder(orderId, updaterFn) {
-    const order = orders.find((o) => o.id === orderId);
+    const order = orders.find((o) => o && o.id === orderId);
     if (!order) return null;
     updaterFn(order);
     saveOrders();
@@ -723,7 +786,9 @@ const MarkerStore = (function () {
   function init() {
     loadLocalAll();
     seedDefaultsIfNeeded();
-    orders.forEach((o) => lastOrdersMap.set(o.id, JSON.stringify(o)));
+    orders.forEach((o) => {
+      if (o && o.id) lastOrdersMap.set(o.id, JSON.stringify(o));
+    });
   }
 
   return {
