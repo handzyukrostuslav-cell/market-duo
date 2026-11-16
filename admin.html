@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>MARKET DUO — Адмін-панель магазину</title>
-  <link rel="stylesheet" href="style.css?v=1">
+  <link rel="stylesheet" href="style.css?v=2">
 </head>
 <body class="admin-body">
   <!-- Попередження при відкритті локально через file:// -->
@@ -21,17 +21,26 @@
         <p>Панель керування замовленнями та каталогом</p>
       </div>
 
-      <form id="adminLoginForm">
+      <form id="adminLoginForm" novalidate>
         <div class="form-group">
           <label for="adminPasswordInput" class="form-label">Пароль адміністратора</label>
-          <input
-            type="password"
-            id="adminPasswordInput"
-            class="form-input"
-            placeholder="Введіть пароль"
-            required
-            autofocus
-          >
+          <div class="password-input-wrap">
+            <input
+              type="password"
+              id="adminPasswordInput"
+              class="form-input"
+              placeholder="Введіть пароль"
+              autocomplete="current-password"
+              required
+            >
+            <button
+              type="button"
+              id="toggleAdminPassBtn"
+              class="password-toggle-btn"
+              aria-label="Показати або приховати пароль"
+              title="Показати пароль"
+            >👁️</button>
+          </div>
         </div>
         <div class="error-message hidden" id="adminLoginError">Невірний пароль. Спробуйте ще раз.</div>
         <button type="submit" class="btn btn-primary btn-block btn-lg" id="adminLoginBtn">
@@ -495,7 +504,7 @@
     </div>
   </div>
 
-  <script src="store.js?v=1"></script>
-  <script src="admin.js?v=1"></script>
+  <script src="store.js?v=2"></script>
+  <script src="admin.js?v=2"></script>
 </body>
 </html>
