@@ -15,7 +15,9 @@ const MarkerStore = (function () {
   const SYSTEM_CATEGORIES = [BAGS_CATEGORY, ADULT_CATEGORY];
 
   let products = [];
-  let categories = [];
+  let settings = {
+    firebaseUrl: 'https://market-duo-default-rtdb.europe-west1.firebasedatabase.app',
+    cardNumber: '',let categories = [];
   let orders = [];
   let orderCounter = 0;
   let settings = {
