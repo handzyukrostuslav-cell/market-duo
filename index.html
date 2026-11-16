@@ -1,0 +1,376 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MARKET DUO — Онлайн-замовлення та самовивіз</title>
+  <link rel="stylesheet" href="style.css?v=1">
+</head>
+<body>
+  <!-- Шапка сайту -->
+  <header class="site-header">
+    <div class="container header-inner">
+      <div class="brand-block">
+        <a href="index.html" class="brand-logo" id="brandHomeLink">
+          <span class="brand-icon">🛒</span>
+          <div class="brand-text">
+            <span class="brand-name">MARKET DUO</span>
+            <span class="brand-address">📍 м. Київ, вул. Хрещатик, буд. 0</span>
+          </div>
+        </a>
+      </div>
+
+      <nav class="nav-tabs" aria-label="Головна навігація">
+        <button type="button" class="nav-tab active" data-tab="catalog">
+          Каталог товарів
+        </button>
+        <button type="button" class="nav-tab" data-tab="favorites">
+          ❤️ Обране <span class="badge-pill" id="favCountBadge">0</span>
+        </button>
+        <button type="button" class="nav-tab nav-tab-adult" data-tab="adult">
+          🔞 Алкоголь та тютюнові вироби
+        </button>
+        <button type="button" class="nav-tab" data-tab="cabinet">
+          👤 Мій кабінет <span class="badge-alert hidden" id="cabinetAlertBadge" title="Потрібне підтвердження змін">!</span>
+        </button>
+      </nav>
+
+      <div class="header-actions">
+        <button type="button" class="cart-trigger-btn" id="openCartBtn" aria-label="Відкрити кошик">
+          <span>🛒 Кошик</span>
+          <span class="cart-badge" id="cartCountBadge">0</span>
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Основний контент -->
+  <main class="container main-content">
+    <!-- Розділ: Каталог / Обране / 18+ -->
+    <section id="view-catalog" class="view-section active">
+      <!-- Попередження для розділу 18+ -->
+      <div id="adultSectionBanner" class="adult-banner hidden">
+        <strong>🔞 Розділ «Алкоголь та тютюнові вироби» (18+)</strong>
+        <p>Видача замовлень із товарами цієї категорії здійснюється на точці самовивозу виключно за умови пред'явлення оригіналу документа, що підтверджує повноліття.</p>
+      </div>
+
+      <!-- Пошук та фільтри -->
+      <div class="catalog-controls">
+        <div class="search-box">
+          <span class="search-icon">🔍</span>
+          <input
+            type="search"
+            id="searchInput"
+            class="form-input"
+            placeholder="Пошук товарів за назвою або категорією..."
+            autocomplete="off"
+          >
+          <button type="button" id="clearSearchBtn" class="clear-search-btn hidden" aria-label="Очистити пошук">✕</button>
+        </div>
+
+        <div class="category-chips" id="categoryChips" role="tablist" aria-label="Категорії товарів">
+          <!-- Генерується динамічно через app.js -->
+        </div>
+      </div>
+
+      <!-- Заголовок активного розділу -->
+      <div class="catalog-header-row">
+        <h1 class="section-title" id="catalogSectionTitle">Усі товари</h1>
+        <span class="catalog-counter" id="catalogItemsCount">0 товарів</span>
+      </div>
+
+      <!-- Сітка товарів -->
+      <div class="products-grid" id="productsGrid">
+        <!-- Картки товарів генеруються через app.js -->
+      </div>
+
+      <!-- Порожній стан -->
+      <div class="empty-state hidden" id="catalogEmptyState">
+        <div class="empty-icon">🔍</div>
+        <h3>Товарів не знайдено</h3>
+        <p>Спробуйте змінити пошуковий запит або обрати іншу категорію.</p>
+      </div>
+    </section>
+
+    <!-- Розділ: Кабінет клієнта -->
+    <section id="view-cabinet" class="view-section hidden">
+      <div class="cabinet-header">
+        <div>
+          <h1 class="section-title">Мій кабінет</h1>
+          <p class="section-subtitle">Відстеження статусу замовлень, погодження замін та програма лояльності</p>
+        </div>
+        <div class="sync-indicator" id="clientSyncIndicator" title="Статус синхронізації">
+          <span class="sync-dot"></span>
+          <span class="sync-text">Оновлення...</span>
+        </div>
+      </div>
+
+      <!-- Пошук замовлень за телефоном -->
+      <div class="card cabinet-search-card">
+        <form id="cabinetSearchForm" class="cabinet-search-form">
+          <div class="form-group flex-grow">
+            <label for="cabinetPhoneInput" class="form-label">Ваш номер телефону</label>
+            <input
+              type="tel"
+              id="cabinetPhoneInput"
+              class="form-input"
+              placeholder="+380 (__) ___-__-__"
+              required
+            >
+          </div>
+          <button type="submit" class="btn btn-primary" id="cabinetSearchBtn">
+            Знайти мої замовлення
+          </button>
+        </form>
+      </div>
+
+      <!-- Банер програми лояльності -->
+      <div class="loyalty-banner hidden" id="loyaltyBanner">
+        <!-- Заповнюється динамічно через app.js -->
+      </div>
+
+      <!-- Список замовлень клієнта -->
+      <div class="client-orders-list" id="clientOrdersList">
+        <div class="empty-state">
+          <div class="empty-icon">📱</div>
+          <h3>Введіть номер телефону</h3>
+          <p>Вкажіть номер телефону, використаний під час оформлення, щоб переглянути історію та статуси замовлень.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Підвал сайту -->
+  <footer class="site-footer">
+    <div class="container footer-inner">
+      <div>
+        <strong>MARKET DUO</strong> — Самовивіз: м. Київ, вул. Хрещатик, буд. 0
+      </div>
+      <div class="footer-links">
+        <a href="admin.html" class="staff-link">Вхід для персоналу</a>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Боковий кошик (Drawer) -->
+  <div class="drawer-backdrop hidden" id="cartBackdrop"></div>
+  <aside class="cart-drawer" id="cartDrawer" aria-hidden="true" aria-label="Кошик покупок">
+    <div class="drawer-header">
+      <h2>🛒 Ваш кошик</h2>
+      <button type="button" class="icon-close-btn" id="closeCartBtn" aria-label="Закрити кошик">✕</button>
+    </div>
+
+    <div class="drawer-body" id="cartDrawerBody">
+      <!-- Порожній кошик -->
+      <div class="empty-state" id="emptyCartState">
+        <div class="empty-icon">🛒</div>
+        <h3>Кошик порожній</h3>
+        <p>Додайте товари з каталогу, щоб оформити замовлення на самовивіз.</p>
+      </div>
+
+      <!-- Список товарів у кошику -->
+      <div class="cart-items-list" id="cartItemsList"></div>
+
+      <!-- Окремий блок пакетів у кошику -->
+      <div class="cart-bags-box hidden" id="cartBagsSection">
+        <div class="cart-bags-header">
+          <span>🛍️ Пакети до замовлення</span>
+        </div>
+        <div class="cart-bags-list" id="cartBagsList"></div>
+      </div>
+
+      <!-- Форма оформлення замовлення -->
+      <form id="checkoutForm" class="checkout-form hidden">
+        <hr class="divider">
+        <h3 class="checkout-subtitle">Дані для самовивозу</h3>
+        <p class="pickup-note">📍 Точка видачі: <strong>м. Київ, вул. Хрещатик, буд. 0</strong></p>
+
+        <div class="form-group">
+          <label for="customerNameInput" class="form-label">Ваше ім'я та прізвище *</label>
+          <input
+            type="text"
+            id="customerNameInput"
+            class="form-input"
+            placeholder="Наприклад: Олена Коваленко"
+            required
+          >
+        </div>
+
+        <div class="form-group">
+          <label for="customerPhoneInput" class="form-label">Номер телефону *</label>
+          <input
+            type="tel"
+            id="customerPhoneInput"
+            class="form-input"
+            placeholder="+380 (__) ___-__-__"
+            required
+          >
+        </div>
+
+        <!-- Плашка дозамовлення в активний пакет -->
+        <div class="active-order-banner hidden" id="activeOrderBanner">
+          <div class="active-order-info">
+            <strong>📦 У вас є активне замовлення <span id="activeOrderCodeText">#0000</span>!</strong>
+            <p>Ви можете додати ці товари до поточного пакета без створення нового коду.</p>
+          </div>
+          <button type="button" class="btn btn-success btn-block" id="appendToActiveOrderBtn">
+            ➕ Додати в активний пакет без нового коду
+          </button>
+        </div>
+
+        <div class="form-group">
+          <label for="customerCommentInput" class="form-label">Коментар до замовлення (необов'язково)</label>
+          <textarea
+            id="customerCommentInput"
+            class="form-textarea"
+            rows="2"
+            placeholder="Побажання щодо збірки або часу візиту..."
+          ></textarea>
+        </div>
+
+        <!-- Спосіб оплати -->
+        <div class="form-group">
+          <span class="form-label">Спосіб оплати</span>
+          <div class="payment-options">
+            <label class="radio-card">
+              <input type="radio" name="paymentMethod" value="cash" checked>
+              <span>💵 Оплата при отриманні</span>
+            </label>
+            <label class="radio-card">
+              <input type="radio" name="paymentMethod" value="card">
+              <span>💳 Оплата за реквізитами (на картку)</span>
+            </label>
+          </div>
+        </div>
+
+        <!-- Блок реквізитів картки -->
+        <div class="card-payment-box hidden" id="cardPaymentBox">
+          <div class="card-detail-row">
+            <span>Номер картки:</span>
+            <div class="copy-group">
+              <strong id="displayCardNumber">—</strong>
+              <button type="button" class="btn btn-xs btn-secondary" id="copyCardBtn">Копіювати</button>
+            </div>
+          </div>
+          <div class="card-detail-row">
+            <span>Отримувач:</span>
+            <strong id="displayCardRecipient">—</strong>
+          </div>
+          <div class="card-detail-row">
+            <span>Код замовлення:</span>
+            <div class="copy-group">
+              <strong class="code-highlight" id="previewOrderCode">0001</strong>
+              <button type="button" class="btn btn-xs btn-secondary" id="copyOrderCodeBtn">Копіювати</button>
+            </div>
+          </div>
+          <p class="card-payment-warning">
+            ⚠️ Обов'язково вкажіть 4-значний код замовлення у призначенні платежу!
+          </p>
+        </div>
+
+        <!-- Підсумок сум -->
+        <div class="cart-totals-box" id="cartTotalsBox">
+          <div class="total-row">
+            <span>Сума товарів:</span>
+            <span id="cartSubtotal">0.00 грн</span>
+          </div>
+          <div class="total-row discount-row hidden" id="cartDiscountRow">
+            <span id="cartDiscountLabel">Знижка постійного клієнта:</span>
+            <span id="cartDiscountAmount">-0.00 грн</span>
+          </div>
+          <div class="total-row grand-total">
+            <span>До сплати:</span>
+            <span id="cartGrandTotal">0.00 грн</span>
+          </div>
+        </div>
+
+        <button type="submit" class="btn btn-primary btn-lg btn-block" id="placeOrderBtn">
+          Оформити нове замовлення
+        </button>
+      </form>
+    </div>
+  </aside>
+
+  <!-- Модальне вікно 1: Підтвердження віку 18+ -->
+  <div class="modal-backdrop hidden" id="ageModal" role="dialog" aria-modal="true" aria-labelledby="ageModalTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="ageModalTitle">🔞 Підтвердження повноліття (18+)</h3>
+      </div>
+      <div class="modal-body">
+        <p>
+          Інформація в цьому розділі призначена виключно для осіб, яким виповнилося <strong>18 років</strong>.
+        </p>
+        <p class="warning-text-box">
+          ⚠️ Видача алкогольних напоїв та тютюнових виробів на точці самовивозу здійснюється <strong>виключно за оригіналом документа</strong>, що посвідчує вік покупця.
+        </p>
+      </div>
+      <div class="modal-footer modal-footer-stack">
+        <button type="button" class="btn btn-primary btn-block" id="confirmAgeBtn">
+          Так, мені виповнилося 18 років
+        </button>
+        <button type="button" class="btn btn-secondary btn-block" id="cancelAgeBtn">
+          Ні, повернутися до каталогу
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальне вікно 2: Вибір пакета перед оформленням -->
+  <div class="modal-backdrop hidden" id="bagModal" role="dialog" aria-modal="true" aria-labelledby="bagModalTitle">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3 id="bagModalTitle">🛍️ Чи бажаєте додати пакет до свого замовлення?</h3>
+        <button type="button" class="icon-close-btn" id="closeBagModalBtn" aria-label="Закрити">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="modal-hint">Оберіть потрібну кількість пакетів або зазначте, що прийдете зі своїм:</p>
+        <div class="bag-modal-list" id="bagModalList">
+          <!-- Список пакетів генерується динамічно -->
+        </div>
+        <div class="bag-modal-summary">
+          <span>Підсумкова сума замовлення (з урахуванням пакетів та знижки):</span>
+          <strong id="bagModalTotal">0.00 грн</strong>
+        </div>
+      </div>
+      <div class="modal-footer modal-footer-stack">
+        <button type="button" class="btn btn-primary btn-block" id="confirmWithBagsBtn">
+          🛍️ Підтвердити з пакетами та оформити
+        </button>
+        <button type="button" class="btn btn-outline btn-block" id="confirmOwnBagBtn">
+          🎒 Я прийду зі своїм пакетом
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальне вікно 3: Підтвердження оформленого замовлення -->
+  <div class="modal-backdrop hidden" id="orderSuccessModal" role="dialog" aria-modal="true" aria-labelledby="successModalTitle">
+    <div class="modal-card text-center">
+      <div class="modal-header justify-center">
+        <h3 id="successModalTitle">✅ Замовлення прийнято!</h3>
+      </div>
+      <div class="modal-body">
+        <p>Ваш 4-значний код замовлення для отримання:</p>
+        <div class="success-code-box" id="successOrderCode">0001</div>
+        <p class="pickup-reminder">
+          📍 Адреса самовивозу:<br>
+          <strong>м. Київ, вул. Хрещатик, буд. 0</strong>
+        </p>
+        <div class="success-payment-note hidden" id="successPaymentNote"></div>
+      </div>
+      <div class="modal-footer modal-footer-stack">
+        <button type="button" class="btn btn-primary btn-block" id="goToCabinetAfterOrderBtn">
+          Відстежити у «Мій кабінет»
+        </button>
+        <button type="button" class="btn btn-secondary btn-block" id="closeSuccessModalBtn">
+          Продовжити покупки
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script src="store.js?v=1"></script>
+  <script src="app.js?v=1"></script>
+</body>
+</html>

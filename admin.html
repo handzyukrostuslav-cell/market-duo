@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MARKET DUO — Адмін-панель магазину</title>
+  <link rel="stylesheet" href="style.css?v=1">
+</head>
+<body class="admin-body">
+  <!-- Попередження при відкритті локально через file:// -->
+  <div id="fileProtocolWarning" class="protocol-warning hidden">
+    ⚠️ Увага! Сайт відкрито локально через <code>file://</code>. Для стабільної синхронізації з Firebase та коректної роботи браузерних функцій відкривайте панель через веб-хостинг (HTTPS / GitHub Pages).
+  </div>
+
+  <!-- Екран входу в адмін-панель -->
+  <div id="adminLoginScreen" class="admin-login-wrapper">
+    <div class="card admin-login-card">
+      <div class="login-brand">
+        <span class="brand-icon">🔐</span>
+        <h1>MARKET DUO</h1>
+        <p>Панель керування замовленнями та каталогом</p>
+      </div>
+
+      <form id="adminLoginForm">
+        <div class="form-group">
+          <label for="adminPasswordInput" class="form-label">Пароль адміністратора</label>
+          <input
+            type="password"
+            id="adminPasswordInput"
+            class="form-input"
+            placeholder="Введіть пароль"
+            required
+            autofocus
+          >
+        </div>
+        <div class="error-message hidden" id="adminLoginError">Невірний пароль. Спробуйте ще раз.</div>
+        <button type="submit" class="btn btn-primary btn-block btn-lg" id="adminLoginBtn">
+          Увійти в панель
+        </button>
+      </form>
+
+      <div class="login-footer">
+        <a href="index.html">← Повернутися на вітрину магазину</a>
+      </div>
+    </div>
+  </div>
+
+  <!-- Основна робоча панель адміністратора -->
+  <div id="adminDashboard" class="admin-dashboard hidden">
+    <!-- Шапка адмін-панелі -->
+    <header class="admin-header">
+      <div class="container admin-header-inner">
+        <div class="admin-brand">
+          <strong>MARKET DUO</strong>
+          <span class="admin-badge">Адмін-панель</span>
+        </div>
+
+        <div class="admin-header-controls">
+          <div class="sync-indicator" id="adminSyncIndicator">
+            <span class="sync-dot"></span>
+            <span class="sync-text" id="adminSyncText">Локальний режим</span>
+          </div>
+          <a href="index.html" target="_blank" class="btn btn-sm btn-outline-light">Вітрина ↗</a>
+          <button type="button" class="btn btn-sm btn-danger" id="adminLogoutBtn">Вийти</button>
+        </div>
+      </div>
+    </header>
+
+    <!-- Контейнер спливаючих сповіщень -->
+    <div id="adminToastContainer" class="toast-container" aria-live="polite"></div>
+
+    <main class="container admin-main">
+      <!-- Верхні KPI-картки -->
+      <section class="kpi-grid" aria-label="Ключові показники">
+        <div class="kpi-card kpi-highlight">
+          <span class="kpi-label">Нові замовлення</span>
+          <strong class="kpi-value" id="kpiNewOrders">0</strong>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Усього замовлень</span>
+          <strong class="kpi-value" id="kpiTotalOrders">0</strong>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Сума прийнятих замовлень</span>
+          <strong class="kpi-value" id="kpiAcceptedRevenue">0.00 грн</strong>
+        </div>
+        <div class="kpi-card">
+          <span class="kpi-label">Товарів у каталозі</span>
+          <strong class="kpi-value" id="kpiTotalProducts">0</strong>
+        </div>
+      </section>
+
+      <!-- Навігація по 6 вкладках -->
+      <nav class="admin-tabs" role="tablist" aria-label="Розділи адмін-панелі">
+        <button type="button" class="admin-tab active" data-admin-tab="orders">
+          📋 Замовлення <span class="badge-pill" id="tabNewOrdersBadge">0</span>
+        </button>
+        <button type="button" class="admin-tab" data-admin-tab="products">
+          📦 Товари
+        </button>
+        <button type="button" class="admin-tab" data-admin-tab="bags">
+          🛍️ Пакети
+        </button>
+        <button type="button" class="admin-tab" data-admin-tab="categories">
+          🗂️ Категорії
+        </button>
+        <button type="button" class="admin-tab" data-admin-tab="reports">
+          📊 Клієнти та звіти
+        </button>
+        <button type="button" class="admin-tab" data-admin-tab="settings">
+          ⚙️ Налаштування
+        </button>
+      </nav>
+
+      <!-- ВКЛАДКА 1: ЗАМОВЛЕННЯ -->
+      <section id="tab-orders" class="admin-tab-panel active">
+        <div class="panel-toolbar">
+          <div class="toolbar-left">
+            <button type="button" class="btn btn-primary" id="refreshOrdersBtn">🔄 Оновити</button>
+            <span class="auto-sync-hint">Автосинхронізація: кожні 3 сек</span>
+          </div>
+
+          <div class="toolbar-right">
+            <input
+              type="search"
+              id="orderSearchInput"
+              class="form-input form-input-sm"
+              placeholder="Пошук за кодом, телефоном, ім'ям..."
+            >
+            <select id="orderStatusFilter" class="form-select form-input-sm" aria-label="Фільтр за статусом">
+              <option value="all">Усі статуси</option>
+              <option value="Розміщено">Розміщено</option>
+              <option value="Очікує підтвердження клієнта">Очікує підтвердження клієнта</option>
+              <option value="Комплектується">Комплектується</option>
+              <option value="Готове до видачі">Готове до видачі</option>
+              <option value="Виконано успішно">Виконано успішно</option>
+              <option value="Відхилено">Відхилено</option>
+            </select>
+          </div>
+        </div>
+
+        <div id="adminOrdersList" class="admin-orders-list">
+          <!-- Картки замовлень генеруються через admin.js -->
+        </div>
+      </section>
+
+      <!-- ВКЛАДКА 2: ТОВАРИ -->
+      <section id="tab-products" class="admin-tab-panel hidden">
+        <div class="card admin-form-card">
+          <h2 class="card-title">Додати новий товар</h2>
+          <form id="addProductForm" class="admin-grid-form">
+            <div class="form-group">
+              <label for="prodCodeInput" class="form-label">Код товару (1С / каса)</label>
+              <input type="text" id="prodCodeInput" class="form-input" placeholder="Напр. 00145">
+            </div>
+
+            <div class="form-group">
+              <label for="prodNameInput" class="form-label">Назва товару *</label>
+              <input type="text" id="prodNameInput" class="form-input" placeholder="Напр. Кава мелена Arabica" required>
+            </div>
+
+            <div class="form-group">
+              <label for="prodCategoryInput" class="form-label">Категорія *</label>
+              <input type="text" id="prodCategoryInput" list="categoriesDatalist" class="form-input" placeholder="Оберіть або введіть" required>
+              <datalist id="categoriesDatalist"></datalist>
+            </div>
+
+            <div class="form-group">
+              <label for="prodUnitInput" class="form-label">Одиниця / вага *</label>
+              <input type="text" id="prodUnitInput" class="form-input" value="1 шт" placeholder="1 шт, 1 кг, 900 мл, 400 г" required>
+            </div>
+
+            <div class="form-group">
+              <label for="prodPriceInput" class="form-label">Ціна, грн *</label>
+              <input type="number" id="prodPriceInput" class="form-input" step="0.01" min="0" placeholder="0.00" required>
+            </div>
+
+            <div class="form-group">
+              <label for="prodEmojiInput" class="form-label">Іконка (емодзі)</label>
+              <input type="text" id="prodEmojiInput" class="form-input" value="📦" maxlength="4">
+            </div>
+
+            <div class="form-group">
+              <label for="prodCapacityInput" class="form-label">Місткість / примітка (опціонально)</label>
+              <input type="text" id="prodCapacityInput" class="form-input" placeholder="Напр. скляна банка">
+            </div>
+
+            <div class="form-group">
+              <label for="prodImageUrlInput" class="form-label">URL зображення (опціонально)</label>
+              <input type="url" id="prodImageUrlInput" class="form-input" placeholder="https://...">
+            </div>
+
+            <div class="form-group form-group-full">
+              <label for="prodImageFileInput" class="form-label">Або завантажити фото з пристрою (автостиснення до 360px JPEG)</label>
+              <div class="file-upload-row">
+                <input type="file" id="prodImageFileInput" accept="image/*" class="form-input">
+                <img id="prodImagePreview" src="" alt="Прев'ю" class="image-thumb-preview hidden">
+              </div>
+            </div>
+
+            <div class="form-group form-group-full">
+              <button type="submit" class="btn btn-primary">➕ Додати товар до каталогу</button>
+            </div>
+          </form>
+        </div>
+
+        <div class="panel-toolbar">
+          <input
+            type="search"
+            id="adminProductSearchInput"
+            class="form-input"
+            placeholder="Пошук товару за назвою або кодом 1С..."
+          >
+          <select id="adminProductCategoryFilter" class="form-select" aria-label="Категорія товарів">
+            <option value="all">Усі категорії</option>
+          </select>
+        </div>
+
+        <div id="adminProductsList" class="admin-items-list">
+          <!-- Список товарів генерується через admin.js -->
+        </div>
+      </section>
+
+      <!-- ВКЛАДКА 3: ПАКЕТИ -->
+      <section id="tab-bags" class="admin-tab-panel hidden">
+        <div class="card admin-form-card">
+          <h2 class="card-title">🛍️ Додати новий пакет</h2>
+          <p class="card-subtitle">Додані пакети автоматично відображаються у блоці пакетів у кошику та у вікні вибору пакета перед замовленням.</p>
+
+          <form id="addBagForm" class="admin-grid-form">
+            <div class="form-group">
+              <label for="bagCodeInput" class="form-label">Код пакета (1С)</label>
+              <input type="text" id="bagCodeInput" class="form-input" placeholder="Напр. BAG-01">
+            </div>
+
+            <div class="form-group">
+              <label for="bagNameInput" class="form-label">Назва пакета *</label>
+              <input type="text" id="bagNameInput" class="form-input" placeholder="Напр. Пакет майка фірмовий великий" required>
+            </div>
+
+            <div class="form-group">
+              <label for="bagCapacityInput" class="form-label">Місткість *</label>
+              <input type="text" id="bagCapacityInput" class="form-input" placeholder="Напр. до 10 кг" required>
+            </div>
+
+            <div class="form-group">
+              <label for="bagPriceInput" class="form-label">Ціна за 1 шт, грн *</label>
+              <input type="number" id="bagPriceInput" class="form-input" step="0.01" min="0" placeholder="0.00" required>
+            </div>
+
+            <div class="form-group">
+              <label for="bagImageUrlInput" class="form-label">URL фото (опціонально)</label>
+              <input type="url" id="bagImageUrlInput" class="form-input" placeholder="https://...">
+            </div>
+
+            <div class="form-group">
+              <label for="bagImageFileInput" class="form-label">Фото файлом (автостиснення JPEG)</label>
+              <div class="file-upload-row">
+                <input type="file" id="bagImageFileInput" accept="image/*" class="form-input">
+                <img id="bagImagePreview" src="" alt="Прев'ю пакета" class="image-thumb-preview hidden">
+              </div>
+            </div>
+
+            <div class="form-group form-group-full">
+              <button type="submit" class="btn btn-primary">➕ Додати пакет</button>
+            </div>
+          </form>
+        </div>
+
+        <div id="adminBagsList" class="admin-items-list">
+          <!-- Список пакетів генерується через admin.js -->
+        </div>
+      </section>
+
+      <!-- ВКЛАДКА 4: КАТЕГОРІЇ -->
+      <section id="tab-categories" class="admin-tab-panel hidden">
+        <div class="card admin-form-card">
+          <h2 class="card-title">Керування категоріями</h2>
+          <form id="addCategoryForm" class="inline-form">
+            <input
+              type="text"
+              id="newCategoryNameInput"
+              class="form-input"
+              placeholder="Назва нової категорії..."
+              required
+            >
+            <button type="submit" class="btn btn-primary">Створити категорію</button>
+          </form>
+
+          <label class="checkbox-label mt-1">
+            <input type="checkbox" id="autoHideEmptyCatsCheckbox">
+            <span>Автоматично приховувати порожні категорії на сайті клієнтів</span>
+          </label>
+        </div>
+
+        <div id="adminCategoriesList" class="admin-categories-list">
+          <!-- Список категорій генерується через admin.js -->
+        </div>
+      </section>
+
+      <!-- ВКЛАДКА 5: КЛІЄНТИ ТА ЗВІТИ -->
+      <section id="tab-reports" class="admin-tab-panel hidden">
+        <div class="card admin-form-card">
+          <h2 class="card-title">📥 Експорт звітів у Excel (.csv)</h2>
+          <p class="card-subtitle">Файл формується у кодуванні UTF-8 BOM з роздільником «;» для коректного відкриття в українському Excel.</p>
+
+          <div class="export-buttons-row">
+            <button type="button" class="btn btn-primary" id="exportTodayBtn">За сьогодні</button>
+            <button type="button" class="btn btn-primary" id="exportMonthBtn">За цей місяць</button>
+            <button type="button" class="btn btn-secondary" id="exportAllBtn">За весь час</button>
+          </div>
+
+          <div class="export-range-row">
+            <div class="form-group">
+              <label for="exportDateFrom" class="form-label">Від дати:</label>
+              <input type="date" id="exportDateFrom" class="form-input">
+            </div>
+            <div class="form-group">
+              <label for="exportDateTo" class="form-label">До дати:</label>
+              <input type="date" id="exportDateTo" class="form-input">
+            </div>
+            <button type="button" class="btn btn-outline" id="exportRangeBtn">Експортувати діапазон</button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="panel-toolbar">
+            <h2 class="card-title">Аналітика клієнтів</h2>
+            <input
+              type="search"
+              id="customerAnalyticsSearch"
+              class="form-input form-input-sm"
+              placeholder="Пошук клієнта за ПІБ або телефоном..."
+            >
+          </div>
+
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>ПІБ клієнта</th>
+                  <th>Телефон</th>
+                  <th>Лояльність</th>
+                  <th>Усього</th>
+                  <th>Успішних / Відхил.</th>
+                  <th>Успішність</th>
+                  <th>Сума покупок</th>
+                  <th>Середній чек</th>
+                </tr>
+              </thead>
+              <tbody id="customerAnalyticsTableBody">
+                <!-- Рядки генеруються через admin.js -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- ВКЛАДКА 6: НАЛАШТУВАННЯ -->
+      <section id="tab-settings" class="admin-tab-panel hidden">
+        <div class="settings-grid">
+          <!-- Хмарна синхронізація Firebase -->
+          <div class="card">
+            <h2 class="card-title">☁️ Хмарна синхронізація (Firebase Realtime Database)</h2>
+            <div class="form-group">
+              <label for="settingsFirebaseUrlInput" class="form-label">URL бази даних Firebase</label>
+              <input
+                type="url"
+                id="settingsFirebaseUrlInput"
+                class="form-input"
+                placeholder="https://your-project-default-rtdb.firebasedatabase.app"
+              >
+            </div>
+            <div class="btn-group-wrap">
+              <button type="button" class="btn btn-primary" id="saveFirebaseUrlBtn">Зберегти URL</button>
+              <button type="button" class="btn btn-secondary" id="pushToCloudBtn">📤 Вивантажити локальні дані у хмару</button>
+              <button type="button" class="btn btn-outline" id="pullFromCloudBtn">📥 Завантажити з хмари</button>
+            </div>
+            <p class="settings-status-note" id="settingsSyncInfo">Статус підключення: перевірка...</p>
+          </div>
+
+          <!-- Реквізити для оплати -->
+          <div class="card">
+            <h2 class="card-title">💳 Реквізити для оплати на картку</h2>
+            <div class="form-group">
+              <label for="settingsCardNumberInput" class="form-label">Номер картки</label>
+              <input
+                type="text"
+                id="settingsCardNumberInput"
+                class="form-input"
+                placeholder="4149 0000 0000 0000"
+              >
+            </div>
+            <div class="form-group">
+              <label for="settingsCardRecipientInput" class="form-label">Отримувач платежу (ПІБ / ФОП)</label>
+              <input
+                type="text"
+                id="settingsCardRecipientInput"
+                class="form-input"
+                placeholder="ФОП Іваненко І.І."
+              >
+            </div>
+            <button type="button" class="btn btn-primary" id="savePaymentSettingsBtn">Зберегти реквізити</button>
+          </div>
+
+          <!-- Програма лояльності -->
+          <div class="card">
+            <h2 class="card-title">🎁 Програма лояльності постійних клієнтів</h2>
+            <div class="form-group">
+              <label for="settingsLoyaltyThresholdInput" class="form-label">Кількість успішних замовлень для отримання знижки</label>
+              <input
+                type="number"
+                id="settingsLoyaltyThresholdInput"
+                class="form-input"
+                min="1"
+                value="3"
+              >
+            </div>
+            <div class="form-group">
+              <label for="settingsLoyaltyDiscountInput" class="form-label">Розмір постійної знижки (%)</label>
+              <input
+                type="number"
+                id="settingsLoyaltyDiscountInput"
+                class="form-input"
+                min="0"
+                max="100"
+                step="0.5"
+                value="5"
+              >
+            </div>
+            <button type="button" class="btn btn-primary" id="saveLoyaltySettingsBtn">Зберегти умови лояльності</button>
+          </div>
+
+          <!-- Безпека та пароль -->
+          <div class="card">
+            <h2 class="card-title">🔑 Зміна пароля адмін-панелі</h2>
+            <div class="form-group">
+              <label for="settingsNewPasswordInput" class="form-label">Новий пароль</label>
+              <input type="password" id="settingsNewPasswordInput" class="form-input" placeholder="Введіть новий пароль">
+            </div>
+            <div class="form-group">
+              <label for="settingsConfirmPasswordInput" class="form-label">Підтвердження нового пароля</label>
+              <input type="password" id="settingsConfirmPasswordInput" class="form-input" placeholder="Повторіть новий пароль">
+            </div>
+            <button type="button" class="btn btn-primary" id="saveAdminPasswordBtn">Оновити пароль</button>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <!-- Модальне вікно: Відсутній товар / Заміна товару -->
+  <div class="modal-backdrop hidden" id="missingItemModal" role="dialog" aria-modal="true" aria-labelledby="missingModalTitle">
+    <div class="modal-card modal-card-lg">
+      <div class="modal-header">
+        <h3 id="missingModalTitle">⚠️ Товар відсутній у замовленні</h3>
+        <button type="button" class="icon-close-btn" id="closeMissingModalBtn" aria-label="Закрити">✕</button>
+      </div>
+      <div class="modal-body">
+        <p class="missing-target-info">Позиція: <strong id="missingItemTitle">—</strong></p>
+
+        <label class="checkbox-label highlight-checkbox">
+          <input type="checkbox" id="markProductOutOfStockCheckbox" checked>
+          <span>Також позначити товар як «Немає в наявності» в каталозі сайту</span>
+        </label>
+
+        <div class="missing-action-box">
+          <button type="button" class="btn btn-danger btn-block" id="confirmRemoveItemBtn">
+            ✕ Просто прибрати із замовлення
+          </button>
+        </div>
+
+        <hr class="divider">
+
+        <div class="replacement-section">
+          <h4>🔄 Або запропонувати товар на заміну з каталогу:</h4>
+          <div class="replacement-controls">
+            <input
+              type="search"
+              id="replacementSearchInput"
+              class="form-input"
+              placeholder="Пошук товару на заміну за назвою або кодом 1С..."
+            >
+            <div class="replacement-qty-wrap">
+              <label for="replacementQtyInput">К-сть:</label>
+              <input type="number" id="replacementQtyInput" class="form-input" value="1" step="0.1" min="0.1">
+            </div>
+          </div>
+
+          <div class="replacement-candidates-list" id="replacementCandidatesList">
+            <!-- Кандидати на заміну рендеряться через admin.js -->
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script src="store.js?v=1"></script>
+  <script src="admin.js?v=1"></script>
+</body>
+</html>
