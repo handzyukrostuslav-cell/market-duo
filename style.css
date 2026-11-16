@@ -1947,6 +1947,28 @@ body {
   color: var(--color-danger);
 }
 
+/* Поле пароля з кнопкою показу */
+.password-input-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.password-input-wrap .form-input {
+  padding-right: 42px;
+}
+
+.password-toggle-btn {
+  position: absolute;
+  right: 8px;
+  background: transparent;
+  border: none;
+  font-size: 1.1rem;
+  cursor: pointer;
+  padding: 4px 6px;
+  line-height: 1;
+}
+
 /* --- КРИТИЧНІ АДАПТИВНІ ПРАВИЛА --- */
 @media (max-width: 820px) {
   .site-header {
